@@ -125,7 +125,7 @@ fn mmap_files() -> io::Result<()> {
     // First, second and last values in `b.bin`.
     println!("contig[1048576]: {}", unsafe { *contig.add(1048576) });
     println!("contig[1048577]: {}", unsafe { *contig.add(1048577) });
-    println!("contig[1048577]: {}", unsafe { *contig.add(1048575) });
+    println!("contig[2097144]: {}", unsafe { *contig.add(2097144) });
 
     Ok(())
 }
