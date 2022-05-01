@@ -8,7 +8,7 @@ use std::ptr::null_mut;
 use libc;
 use libc::*;
 use byteorder::{LittleEndian, WriteBytesExt};
-// use std::os::raw::{c_char};
+use std::os::raw::{c_char};
 // use std::ffi::{CString, CStr};
 
 fn write_file(path: &str, begin: u64, end: u64) -> io::Result<()> {
@@ -17,8 +17,7 @@ fn write_file(path: &str, begin: u64, end: u64) -> io::Result<()> {
         buf.write_u64::<LittleEndian>(num)?;
     }
     let mut f = File::create(path)?;
-    f.write_all(&buf)?;
-    Ok(())
+    f.write_all(&buf)
 }
 
 fn write_files() -> io::Result<()> {
@@ -32,6 +31,16 @@ fn write_files() -> io::Result<()> {
 
 fn page_size() -> usize {
     unsafe { sysconf(_SC_PAGESIZE) as usize }
+}
+
+fn get_file_size(path: *const c_char) -> usize {
+    unsafe {
+        let fd = open(path, O_RDONLY);
+        assert_ne!(fd, -1);
+        let file_len = lseek(fd, 0, SEEK_END);
+        close(fd);
+        file_len as usize
+    }
 }
 
 fn mmap_files() -> io::Result<()> {
@@ -50,7 +59,7 @@ fn mmap_files() -> io::Result<()> {
     // size of either file.
     let p = page_size();
     println!("p: {}", p);
-    let eight_mib : usize = 16 * 1024 * 1024;
+    let eight_mib : usize = 8 * 1024 * 1024;
     let master_size = 2 * eight_mib;
 
     // map virtual memory
@@ -58,7 +67,7 @@ fn mmap_files() -> io::Result<()> {
             mmap(
                 null_mut(),
                 master_size,
-                PROT_READ,
+                PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS,
                 -1,
                 0)
@@ -67,21 +76,23 @@ fn mmap_files() -> io::Result<()> {
     assert_ne!(mem, MAP_FAILED);
     assert_eq!((mem as usize) % p, 0);
 
-    // let a_path = const_cstr!("a.bin");
-    // let a_fd = unsafe { open(a_path.as_ptr(), O_RDWR) };
-    // assert_ne!(a_fd, -1);
-    // let a_begin = mem;
-    // let a = unsafe {
-    //         mmap(
-    //             a_begin,
-    //             eight_mib,
-    //             PROT_READ | PROT_WRITE,
-    //             MAP_FIXED | MAP_SHARED,
-    //             a_fd,
-    //             0)
-    //     };
-    // assert_ne!(a, MAP_FAILED);
-    // assert_eq!(a, a_begin);
+    let a_path = const_cstr!("a.bin");
+    let a_file_size = get_file_size(a_path.as_ptr());
+    assert_eq!(a_file_size, eight_mib);
+    let a_fd = unsafe { open(a_path.as_ptr(), O_RDONLY) };
+    assert_ne!(a_fd, -1);
+    let a_begin = mem;
+    let a = unsafe {
+            mmap(
+                a_begin,
+                eight_mib,
+                PROT_READ,
+                MAP_FIXED | MAP_PRIVATE,
+                a_fd,
+                0)
+        };
+    assert_ne!(a, MAP_FAILED);
+    assert_eq!(a, a_begin);
 
     let b_path = const_cstr!("b.bin");
     let b_fd = unsafe { open(b_path.as_ptr(), O_RDONLY) };
@@ -93,7 +104,7 @@ fn mmap_files() -> io::Result<()> {
                 b_start,
                 eight_mib,
                 PROT_READ,
-                MAP_FIXED | MAP_SHARED,
+                MAP_FIXED | MAP_PRIVATE,
                 b_fd,
                 0)
         };
@@ -106,11 +117,15 @@ fn mmap_files() -> io::Result<()> {
     //     println!("contig[{}]: {}", n, unsafe { *contig.add(n) });
     // }
 
+    // First, second and last values in `a.bin`.
     println!("contig[0]: {}", unsafe { *contig });
     println!("contig[1]: {}", unsafe { *contig.add(1) });
     println!("contig[1048575]: {}", unsafe { *contig.add(1048575) });
+
+    // First, second and last values in `b.bin`.
     println!("contig[1048576]: {}", unsafe { *contig.add(1048576) });
     println!("contig[1048577]: {}", unsafe { *contig.add(1048577) });
+    println!("contig[1048577]: {}", unsafe { *contig.add(1048575) });
 
     Ok(())
 }
